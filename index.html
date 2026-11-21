@@ -1,0 +1,171 @@
+<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#070b17"><link rel="manifest" href="manifest.webmanifest"><link rel="icon" href="icon-192.png"><title>여행 영상 스튜디오</title><link rel="stylesheet" href="vendor/leaflet.css">
+<style>
+:root{--g:#d4af37;--c:#151c33;--t:#f1ece0}*{box-sizing:border-box}
+body{margin:0;background:#0b1020;color:var(--t);font:15px/1.5 "Noto Sans KR","Malgun Gothic",system-ui,sans-serif;padding-bottom:env(safe-area-inset-bottom)}
+header{padding:calc(10px + env(safe-area-inset-top)) 14px 8px;background:#070b17;border-bottom:2px solid var(--g);display:flex;gap:6px;align-items:center}
+h1{font-size:17px;margin:0;color:var(--g);flex:1}header button{width:auto;padding:6px 12px;margin:0}
+.card{background:var(--c);margin:12px;padding:14px;border-radius:14px}h3{margin:0 0 6px;color:var(--g);font-size:15px}
+input,select,button{font:inherit;padding:10px 12px;border-radius:10px;border:1px solid #3b4668;background:#0e1427;color:var(--t);width:100%;margin:4px 0}
+button{background:#273158;font-weight:700}button.p{background:linear-gradient(135deg,#b45309,var(--g));color:#111;border:0}button.r{background:#7a2323}
+a.btn{display:block;text-align:center;text-decoration:none;padding:10px;border-radius:10px;margin:4px 0;background:linear-gradient(135deg,#b45309,var(--g));color:#111;font-weight:700}
+#map{height:280px;border-radius:12px}.pin{width:28px;height:28px;border-radius:50%;background:var(--g);color:#111;font-weight:800;text-align:center;line-height:24px;border:2px solid #fff}
+.stop{border-top:1px solid #2b3558;padding:8px 0}.sh{display:flex;gap:6px;align-items:center}.sh b{background:var(--g);color:#111;border-radius:50%;min-width:26px;height:26px;text-align:center}
+.sh input{margin:0}.sh small{white-space:nowrap;opacity:.7}.sh button{width:auto;margin:0;padding:6px 10px}
+.th{display:flex;gap:6px;overflow-x:auto;padding:6px 0}.th img,.th video{height:64px;width:64px;object-fit:cover;border-radius:8px;flex:none}.off{opacity:.25}.sel{outline:3px solid var(--g);outline-offset:-3px}.sh{flex-wrap:wrap}.sh input{flex:1;min-width:120px}
+#bar{position:sticky;bottom:8px;background:#1d2747;border:2px solid var(--g);border-radius:12px;padding:10px;margin-top:8px;z-index:5}.rw{display:flex;gap:6px}.rw button{padding:8px 4px}
+canvas,#out video{width:100%;border-radius:12px;background:#000;margin-top:8px}small.h{opacity:.7;display:block}
+.gr{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}.bk{background:#fcf8ef;color:#1e293b;border-radius:10px;overflow:hidden;border-left:8px solid #7c2d12}
+.bk img{width:100%;height:100px;object-fit:cover;display:block;background:#334}.bk div{padding:8px}.bk button{padding:6px;font-size:13px;margin:2px 0}
+</style></head><body>
+<header><h1>🧭 여행 영상 스튜디오</h1><button id="t1">만들기</button><button id="t2">가판대</button></header>
+<main id="mk">
+<div class="card"><h3>① 여행 정보 · 사진/영상 선택</h3>
+<input id="title" placeholder="여행 제목 (예: 2026 광교산 등산)"><input id="who" placeholder="동반자 이름 (쉼표로 구분)">
+<input id="files" type="file" multiple accept="image/*,video/*"><button class="p" id="go">분석 및 시간순 정렬</button>
+<small class="h" id="msg">사진·영상을 고른 뒤 분석을 누르세요. 위치정보(GPS)가 있는 사진은 지도에 표시됩니다.</small></div>
+<div class="card"><h3>② 이동 경로 지도</h3><div id="map"></div></div>
+<div class="card"><h3>③ 방문지 일정 <small id="cnt"></small></h3><small class="h">장소 이름은 눌러서 고칠 수 있습니다. 사진을 누르면 선택되어 아래 메뉴로 순서 변경·다른 방문지로 이동·제외를 할 수 있고, ▲▼로 방문지 순서도 바꿉니다.</small><div id="stops"></div><div id="bar" hidden></div></div>
+<div class="card"><h3>④ 영상 만들기</h3>
+<small class="h">전체 경로 지도 사진(선택, 없으면 자동 지도)</small><input id="mapimg" type="file" accept="image/*">
+<small class="h">배경음악(선택)</small><input id="bgm" type="file" accept="audio/*">
+<select id="res"><option value="720">720p (빠름)</option><option value="1080">1080p (고화질)</option></select>
+<select id="vcap"><option value="8">영상은 최대 8초씩</option><option value="15" selected>영상은 최대 15초씩</option><option value="60">영상 전체 길이</option></select>
+<button id="pv">▶ 화면에서 미리보기</button><button class="p" id="mkv">🎬 영상 만들기</button><button class="r" id="stp">■ 중지</button><button id="sv">💾 가판대에 저장</button>
+<small class="h" id="st"></small><canvas id="cv" hidden></canvas><div id="out"></div></div></main>
+<main id="sh" hidden><div class="card"><h3>📚 나의 여행 가판대 (이 폰에 저장됨)</h3><div class="gr" id="gr"></div></div></main>
+<script src="vendor/leaflet.js"></script><script src="vendor/exifr.js"></script>
+<script>
+const $=s=>document.querySelector(s),pad=n=>String(n).padStart(2,'0'),esc=s=>String(s||'').replace(/[&<>"]/g,c=>'&#'+c.charCodeAt(0)+';'),
+FONT='"Noto Sans KR","Malgun Gothic",sans-serif',G='#d4af37',CR='#faf3e4',sleep=ms=>new Promise(r=>setTimeout(r,ms));
+let stops=[],map,lg,lastVideo=null,busy=false,abort=false,curId=0;
+const fmt=d=>`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+const hav=(a,b,c,d)=>{const r=Math.PI/180,x=(c-a)*r,y=(d-b)*r,q=Math.sin(x/2)**2+Math.cos(a*r)*Math.cos(c*r)*Math.sin(y/2)**2;return 12742e3*Math.asin(Math.sqrt(q))};
+const st=t=>$('#st').textContent=t,fname=()=>($('#title').value||'여행기록').replace(/[^\w가-힣 -]/g,'');
+function tab(n){$('#mk').hidden=n!=1;$('#sh').hidden=n!=2;if(n==2)shelf();else if(map)setTimeout(()=>map.invalidateSize(),50)}
+$('#t1').onclick=()=>tab(1);$('#t2').onclick=()=>tab(2);
+/* ---------- 분석 ---------- */
+async function meta(f){const v=f.type.startsWith('video'),o={file:f,isVideo:v,off:false};let d=null;
+ if(!v){try{const g=await exifr.gps(f);if(g&&g.latitude!=null){o.lat=g.latitude;o.lng=g.longitude}}catch(e){}
+  try{const e=await exifr.parse(f,['DateTimeOriginal']);if(e&&e.DateTimeOriginal)d=e.DateTimeOriginal}catch(e){}}
+ if(!d){const m=f.name.match(/(20\d\d)(\d\d)(\d\d)[_-]?(\d\d)(\d\d)(\d\d)/);d=m?new Date(+m[1],m[2]-1,+m[3],+m[4],+m[5],+m[6]):new Date(f.lastModified)}
+ o.ts=fmt(d);o.url=URL.createObjectURL(f);return o}
+async function geo(a,b){try{const j=await(await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=17&accept-language=ko&lat=${a}&lon=${b}`)).json(),x=j.address||{};
+ return j.name||x.tourism||x.leisure||x.natural||x.suburb||x.neighbourhood||x.village||x.town||x.city_district||x.road||''}catch(e){return ''}}
+$('#go').onclick=async()=>{const fl=[...$('#files').files];if(!fl.length)return alert('사진/영상을 먼저 선택하세요');
+ $('#msg').textContent='분석 중...';const its=[];for(const f of fl)its.push(await meta(f));its.sort((a,b)=>a.ts<b.ts?-1:1);stops=[];curId=0;
+ const ok=its.filter(i=>i.lat!=null),no=its.filter(i=>i.lat==null),T=(d,i)=>({date:i.ts.slice(0,10),time:i.ts.slice(11,16),lat:null,lng:null,place:'',items:[]});
+ if(ok.length){for(const i of ok){const p=stops[stops.length-1];if(p&&p.date==i.ts.slice(0,10)&&hav(p.lat,p.lng,i.lat,i.lng)<=200)p.items.push(i);else stops.push({date:i.ts.slice(0,10),time:i.ts.slice(11,16),lat:i.lat,lng:i.lng,place:'',items:[i]})}
+  for(const i of no){let b=stops[0],bd=1e18;for(const s of stops)for(const j of s.items){const d=Math.abs(new Date(j.ts)-new Date(i.ts));if(d<bd){bd=d;b=s}}b.items.push(i)}}
+ else{for(const i of no){let s=stops.find(z=>z.date==i.ts.slice(0,10));if(!s)stops.push(s=T(0,i));s.items.push(i)}}
+ stops.forEach(s=>s.items.sort((a,b)=>a.ts<b.ts?-1:1));
+ $('#msg').textContent=ok.length?`완료! 방문지 ${stops.length}곳 (위치정보 있는 사진 ${ok.length}장). 지명을 찾는 중...`:'위치정보(GPS)가 있는 사진이 없어 날짜별로 묶었습니다. 사진 선택 화면에서 "파일/문서" 방식으로 고르면 위치정보가 남는 폰이 많습니다.';
+ renderAll();let n=0;for(const s of stops){n++;if(s.lat!=null&&!s.place){s.place=await geo(s.lat,s.lng)||`방문지 ${n}`;renderAll();await sleep(1100)}}
+ if(ok.length)$('#msg').textContent=`완료! 방문지 ${stops.length}곳`};
+let sel=null;
+function bar(){const b=$('#bar'),o=sel&&stops.find(s=>s.items.includes(sel));if(!o){sel=null;b.hidden=true;return}b.hidden=false;
+ b.innerHTML=`<b>선택한 자료</b> <small>${o.items.indexOf(sel)+1}/${o.items.length}번째</small><div class="rw"><button id="b1">◀ 앞으로</button><button id="b2">뒤로 ▶</button><button id="b3">${sel.off?'영상에 포함':'영상에서 제외'}</button></div><select id="b4"><option value="">다른 방문지로 이동…</option>${stops.map((s,i)=>`<option value="${i}">${i+1}. ${esc(s.place||'방문지')}</option>`).join('')}<option value="n">＋ 새 방문지로 분리</option></select><button id="b5">선택 해제</button>`;
+ const mv=d=>{const a=o.items,i=a.indexOf(sel),j=i+d;if(j<0||j>=a.length)return;[a[i],a[j]]=[a[j],a[i]];renderAll()};
+ $('#b1').onclick=()=>mv(-1);$('#b2').onclick=()=>mv(1);$('#b3').onclick=()=>{sel.off=!sel.off;renderAll()};$('#b5').onclick=()=>{sel=null;renderAll()};
+ $('#b4').onchange=e=>{const v=e.target.value;if(v==='')return;o.items.splice(o.items.indexOf(sel),1);let ns=null;
+  if(v==='n'){ns={date:sel.ts.slice(0,10),time:sel.ts.slice(11,16),lat:sel.lat??null,lng:sel.lng??null,place:'',items:[sel]};stops.splice(stops.indexOf(o)+1,0,ns)}else stops[+v].items.push(sel);
+  if(!o.items.length)stops.splice(stops.indexOf(o),1);renderAll();if(ns&&ns.lat!=null)geo(ns.lat,ns.lng).then(p=>{ns.place=p;renderAll()})}}
+function renderAll(){const box=$('#stops');box.innerHTML='';let n=0;
+ stops.forEach((s,i)=>{n+=s.items.length;const d=document.createElement('div');d.className='stop';
+  d.innerHTML=`<div class="sh"><b>${i+1}</b><input value="${esc(s.place)}" placeholder="장소 이름"><small>${s.date} ${s.time}</small><button class="u">▲</button><button class="w">▼</button><button class="x">삭제</button></div><div class="th"></div>`;
+  d.querySelector('input').onchange=e=>{s.place=e.target.value;drawMap()};d.querySelector('.x').onclick=()=>{stops.splice(i,1);renderAll()};d.querySelector('.u').onclick=()=>{if(i){[stops[i-1],stops[i]]=[stops[i],stops[i-1]];renderAll()}};d.querySelector('.w').onclick=()=>{if(i<stops.length-1){[stops[i+1],stops[i]]=[stops[i],stops[i+1]];renderAll()}};
+  const th=d.querySelector('.th');s.items.forEach(it=>{const e=document.createElement(it.isVideo?'video':'img');e.src=it.url+(it.isVideo?'#t=0.5':'');if(it.isVideo){e.muted=true;e.preload='metadata'}
+   e.className=(it.off?'off ':'')+(it===sel?'sel':'');e.onclick=()=>{sel=it;document.querySelectorAll('.th .sel').forEach(z=>z.classList.remove('sel'));e.classList.add('sel');bar()};th.appendChild(e)});box.appendChild(d)});
+ $('#cnt').textContent=`(${stops.length}곳 · 자료 ${n}개)`;bar();drawMap()}
+function drawMap(){if(!window.L)return;if(!map){map=L.map('map');L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(map);lg=L.layerGroup().addTo(map)}
+ lg.clearLayers();const P=stops.filter(s=>s.lat!=null);if(!P.length){map.setView([36.5,127.8],6);return}const ll=P.map(s=>[s.lat,s.lng]);
+ L.polyline(ll,{color:'#d4af37',weight:4}).addTo(lg);P.forEach(s=>L.marker([s.lat,s.lng],{icon:L.divIcon({className:'',html:`<div class="pin">${stops.indexOf(s)+1}</div>`,iconSize:[28,28]})}).bindPopup(`${esc(s.place)}<br>${s.items.length}개`).addTo(lg));
+ map.invalidateSize();map.fitBounds(ll,{padding:[30,30],maxZoom:16})}
+/* ---------- 그리기 도구 ---------- */
+const tiny=document.createElement('canvas');tiny.width=48;tiny.height=27;const tx=tiny.getContext('2d');
+function cover(x,s,sw,sh,dw,dh){const k=Math.max(dw/sw,dh/sh),w=sw*k,h=sh*k;x.drawImage(s,(dw-w)/2,(dh-h)/2,w,h)}
+function dark(x,W,H,a){x.fillStyle=`rgba(5,8,16,${a})`;x.fillRect(0,0,W,H);const g=x.createRadialGradient(W/2,H/2,H*.35,W/2,H/2,H*.95);g.addColorStop(0,'rgba(0,0,0,0)');g.addColorStop(1,'rgba(0,0,0,.6)');x.fillStyle=g;x.fillRect(0,0,W,H)}
+function blurBg(x,src,sw,sh,W,H){if(src){cover(tx,src,sw,sh,48,27)}else{tx.fillStyle='#161c34';tx.fillRect(0,0,48,27)}x.imageSmoothingQuality='high';x.drawImage(tiny,0,0,W,H);dark(x,W,H,.42)}
+function mkBg(src,W,H){const c=document.createElement('canvas');c.width=W;c.height=H;blurBg(c.getContext('2d'),src,src&&src.width,src&&src.height,W,H);return c}
+function rr(x,a,b,w,h,r){x.beginPath();x.roundRect?x.roundRect(a,b,w,h,r):x.rect(a,b,w,h)}
+function framed(x,src,sw,sh,W,H,z){const k=Math.min(W*.8/sw,H*.64/sh)*z,w=sw*k,h=sh*k,cx=W/2,cy=H*.455,b=Math.max(6,H*.008),r=H*.014;
+ x.save();x.shadowColor='rgba(0,0,0,.6)';x.shadowBlur=H*.04;x.shadowOffsetY=H*.012;x.fillStyle=CR;rr(x,cx-w/2-b,cy-h/2-b,w+2*b,h+2*b,r+b/2);x.fill();x.restore();
+ x.save();rr(x,cx-w/2,cy-h/2,w,h,r);x.clip();x.drawImage(src,cx-w/2,cy-h/2,w,h);x.restore()}
+function cap(x,W,H,place,sub,cnt,si,n,title,p){const s=H/1080,m=W*.055,g=x.createLinearGradient(0,H*.64,0,H);g.addColorStop(0,'rgba(5,7,14,0)');g.addColorStop(1,'rgba(5,7,14,.85)');x.fillStyle=g;x.fillRect(0,H*.64,W,H*.36);
+ x.save();x.globalAlpha=Math.min(1,p*5);x.textBaseline='top';x.fillStyle=G;x.fillRect(m,H-197*s,7*s,130*s);x.shadowColor='rgba(0,0,0,.7)';x.shadowBlur=8*s;
+ x.fillStyle=CR;x.font=`800 ${64*s}px ${FONT}`;x.fillText(place,m+24*s,H-205*s,W*.62);x.fillStyle='#e2dccd';x.font=`500 ${29*s}px ${FONT}`;x.fillText(sub,m+24*s,H-119*s);
+ x.textAlign='right';x.fillStyle=G;x.font=`700 ${36*s}px ${FONT}`;x.fillText(cnt,W-m,H-191*s);x.font=`700 ${23*s}px ${FONT}`;
+ if(n){x.fillText(`STOP ${pad(si+1)} / ${pad(n)}`,W-m,52*s)}x.textAlign='left';x.fillText((title||'').toUpperCase(),m+18*s,52*s,W*.5);x.fillStyle=G;x.fillRect(m,50*s,5*s,26*s);x.restore();
+ if(n){const y=H-46*s,w=W-2*m;x.fillStyle='rgba(255,255,255,.25)';x.fillRect(m,y,w,4*s);x.fillStyle=G;x.fillRect(m,y,w*(si+1)/n,4*s);for(let k=0;k<n&&n<=14;k++){x.beginPath();x.arc(m+w*(k+1)/n,y+2*s,6*s,0,7);x.fillStyle=k<=si?G:'#3c4458';x.fill()}}}
+function card(x,bg,W,H,k,title,l1,l2,l3){const s=H/1080;x.drawImage(bg,0,0);x.strokeStyle='rgba(212,175,55,.8)';x.lineWidth=2*s;const m=Math.min(W,H)*.06,L=70*s;
+ [[m,m,1,1],[W-m,m,-1,1],[m,H-m,1,-1],[W-m,H-m,-1,-1]].forEach(([a,b,u,v])=>{x.beginPath();x.moveTo(a+u*L,b);x.lineTo(a,b);x.lineTo(a,b+v*L);x.stroke()});
+ x.textAlign='center';x.textBaseline='top';x.fillStyle=G;x.font=`700 ${27*s}px ${FONT}`;if('letterSpacing'in x)x.letterSpacing=`${10*s}px`;x.fillText(k,W/2,H*.285);if('letterSpacing'in x)x.letterSpacing='0px';
+ x.save();x.shadowColor='rgba(0,0,0,.7)';x.shadowBlur=12*s;x.fillStyle=CR;x.font=`800 ${96*s}px ${FONT}`;x.fillText(title,W/2,H*.38,W*.8);x.restore();
+ x.fillStyle=G;x.font=`700 ${36*s}px ${FONT}`;x.fillText(l1,W/2,H*.38+150*s,W*.8);x.fillStyle='#e2dccd';x.font=`500 ${29*s}px ${FONT}`;x.fillText(l2,W/2,H*.38+205*s,W*.7);x.fillText(l3,W/2,H*.38+250*s,W*.7);x.textAlign='left'}
+function trans(x,W,H,fx,q,f){x.save();if(fx=='fade')x.globalAlpha=q;else if(fx=='left')x.translate(W*(1-q),0);else if(fx=='right')x.translate(-W*(1-q),0);else if(fx=='up')x.translate(0,H*(1-q));
+ else if(fx=='wipe'){x.beginPath();x.rect(0,0,W*q,H);x.clip()}else if(fx=='circle'){x.beginPath();x.arc(W/2,H/2,Math.hypot(W,H)/2*q,0,7);x.clip()}
+ else{x.globalAlpha=q;x.translate(W/2,H/2);x.scale(.92+.08*q,.92+.08*q);x.translate(-W/2,-H/2)}f();x.restore()}
+/* ---------- 자동 지도 (OpenStreetMap 타일) ---------- */
+async function mapCanvas(W,H){const P=stops.filter(s=>s.lat!=null);if(!P.length)return null;const w=Math.round(Math.min(W*.74,H*.66*1.6)),h=Math.round(w/1.6),c=document.createElement('canvas');c.width=w;c.height=h;const x=c.getContext('2d');
+ const mer=(la,lo,z)=>{const n=256*2**z,r=la*Math.PI/180;return[(lo+180)/360*n,(1-Math.log(Math.tan(r)+1/Math.cos(r))/Math.PI)/2*n]},la=P.map(s=>s.lat),lo=P.map(s=>s.lng);
+ const box=z=>[mer(Math.max(...la),Math.min(...lo),z),mer(Math.min(...la),Math.max(...lo),z)];let z=16;for(;z>3;z--){const[a,b]=box(z);if(b[0]-a[0]<w*.7&&b[1]-a[1]<h*.7)break}
+ const[a,b]=box(z),ox=(a[0]+b[0])/2-w/2,oy=(a[1]+b[1])/2-h/2;x.fillStyle='#1b2a30';x.fillRect(0,0,w,h);const jobs=[];
+ for(let i=Math.floor(ox/256);i<=Math.floor((ox+w)/256);i++)for(let j=Math.floor(oy/256);j<=Math.floor((oy+h)/256);j++)jobs.push(new Promise(r=>{const m=new Image();m.crossOrigin='anonymous';const t=setTimeout(r,7000);m.onload=()=>{clearTimeout(t);x.drawImage(m,i*256-ox,j*256-oy);r()};m.onerror=()=>{clearTimeout(t);r()};m.src=`https://tile.openstreetmap.org/${z}/${i}/${j}.png`}));
+ await Promise.all(jobs);const pt=P.map(s=>{const p=mer(s.lat,s.lng,z);return[p[0]-ox,p[1]-oy]});x.lineJoin='round';
+ if(pt.length>1){[['#fff',12],[G,7]].forEach(([col,lw])=>{x.strokeStyle=col;x.lineWidth=lw*h/700;x.beginPath();pt.forEach((p,i)=>i?x.lineTo(...p):x.moveTo(...p));x.stroke()})}
+ x.textBaseline='middle';x.textAlign='center';pt.forEach((p,i)=>{const r=20*h/700;x.fillStyle=G;x.strokeStyle='#fff';x.lineWidth=3;x.beginPath();x.arc(p[0],p[1],r,0,7);x.fill();x.stroke();x.fillStyle='#111';x.font=`800 ${r*1.05}px ${FONT}`;x.fillText(stops.indexOf(P[i])+1,p[0],p[1]+1)});return c}
+async function bmp(f){try{return await createImageBitmap(f,{resizeWidth:1600})}catch(e){return await new Promise(r=>{const i=new Image();i.onload=()=>r(i);i.onerror=()=>r(null);i.src=URL.createObjectURL(f)})}}
+const vmeta=u=>new Promise(r=>{const v=document.createElement('video');v.muted=true;v.playsInline=true;v.preload='auto';v.src=u;v.onloadedmetadata=()=>r(v);v.onerror=()=>r(null)});
+/* ---------- 영상 구성 ---------- */
+async function build(W,H){const title=$('#title').value||'나의 여행',who=$('#who').value.trim(),cp=+$('#vcap').value,ms=[];
+ stops.forEach((s,si)=>s.items.forEach(it=>{if(!it.off)ms.push({s,si,it})}));if(!ms.length)throw Error('사용할 사진/영상이 없습니다');
+ let hero=null,last=null;for(let k=0;k<ms.length;k++){const m=ms[k];st(`자료 준비 ${k+1}/${ms.length}`);if(m.it.isVideo){m.v=await vmeta(m.it.url);if(!m.v){m.skip=1}}else{m.src=await bmp(m.it.file);if(!m.src)m.skip=1;else{hero=hero||m.src;last=m.src}}}
+ const M=ms.filter(m=>!m.skip),n=stops.length,route=stops.map((s,i)=>s.place||`방문지 ${i+1}`).join(' → '),ds=stops.map(s=>s.date).sort(),dt=ds[0]==ds[ds.length-1]?ds[0]:`${ds[0]} ~ ${ds[ds.length-1]}`;
+ let mc=null;const mi=$('#mapimg').files[0];if(mi)mc=await bmp(mi);else{st('지도 만드는 중...');mc=await mapCanvas(W,H)}
+ const S=[],cnt=`${M.length} 개`,sl=(dur,o)=>S.push({dur,...o});
+ const hs=hero&&{w:hero.width,h:hero.height};
+ sl(3.6,{start(){this.bg=mkBg(hero,W,H)},stop(){this.bg=null},draw(x){card(x,this.bg,W,H,'TRAVEL  MEMORY',title,dt,route,`방문지 ${n}곳  ·  기록 ${M.length}개`)}});
+ const mapSlide=(ti,sb,ck)=>{if(mc)sl(4.4,{start(){this.bg=mkBg(mc,W,H)},stop(){this.bg=null},draw(x,p){x.drawImage(this.bg,0,0);framed(x,mc,mc.width,mc.height,W,H,1+.035*(ck?1-p:p));cap(x,W,H,ti,sb,ck?'COMPLETE':'ROUTE',0,0,title,p)}})};
+ mapSlide('전체 여행 이동경로',route,0);
+ M.forEach((m,k)=>{const place=m.s.place||`방문지 ${m.si+1}`,sub=`${m.s.date}  ${m.it.ts.slice(11,16)}`,c=`${pad(k+1)} / ${pad(M.length)}`;
+  if(m.v){const v=m.v;sl(Math.max(1,Math.min(v.duration||3,cp)),{start(){v.currentTime=0;v.play().catch(()=>{})},stop(){v.pause()},draw(x,p){if(v.readyState>=2){blurBg(x,v,v.videoWidth,v.videoHeight,W,H);framed(x,v,v.videoWidth,v.videoHeight,W,H,1)}else{x.fillStyle='#0b1020';x.fillRect(0,0,W,H)}cap(x,W,H,place,sub,c,m.si,n,title,p)}})}
+  else sl(3.8,{start(){this.bg=mkBg(m.src,W,H)},stop(){this.bg=null},draw(x,p){x.drawImage(this.bg,0,0);framed(x,m.src,m.src.width,m.src.height,W,H,1+.04*(k%2?1-p:p));cap(x,W,H,place,sub,c,m.si,n,title,p)}})});
+ mapSlide('전체 여행 경로 완료',`총 ${n}곳  ·  ${route}`,1);
+ sl(3.6,{start(){this.bg=mkBg(last||hero,W,H)},stop(){this.bg=null},draw(x){card(x,this.bg,W,H,'THE  END',title,dt,who?`함께한 사람: ${who}`:route,who?route:'')}});
+ const FX=['fade','left','right','up','wipe','circle','zoom'],TR=.7;S.forEach((s,i)=>{s.s=i?S[i-1].s+S[i-1].dur-TR:0;s.fx=FX[Math.random()*7|0]});
+ const total=S[S.length-1].s+S[S.length-1].dur;return{S,total,TR}}
+function drawAt(x,t,B,W,H){const{S,total,TR}=B;x.fillStyle='#000';x.fillRect(0,0,W,H);const act=[];
+ S.forEach(s=>{const on=t>=s.s&&t<s.s+s.dur;if(on&&!s.on){s.on=1;s.start&&s.start()}else if(!on&&s.on){s.on=0;s.stop&&s.stop()}if(on)act.push(s)});
+ act.forEach((s,i)=>{const p=(t-s.s)/s.dur;if(i==0)s.draw(x,p);else trans(x,W,H,s.fx,Math.min(1,(t-s.s)/TR),()=>s.draw(x,p))});
+ const a=t<.6?1-t/.6:t>total-1.6?(t-(total-1.6))/1.6:0;if(a>0){x.fillStyle=`rgba(0,0,0,${a})`;x.fillRect(0,0,W,H)}}
+/* ---------- 미리보기 / MP4 녹화 ---------- */
+async function run(rec){if(busy)return;if(!stops.length)return alert('먼저 사진/영상을 분석하세요');busy=true;abort=false;
+ const[W,H]=$('#res').value=='1080'?[1920,1080]:[1280,720],cv=$('#cv');cv.width=W;cv.height=H;cv.hidden=false;const x=cv.getContext('2d');let B,ac,au,g,wl,rc,mt,ch=[];
+ try{B=await build(W,H);const bf=$('#bgm').files[0];let dest;
+  if(bf){ac=new AudioContext();au=new Audio(URL.createObjectURL(bf));au.loop=true;const sr=ac.createMediaElementSource(au);g=ac.createGain();g.gain.value=0;sr.connect(g);dest=ac.createMediaStreamDestination();g.connect(dest);if(!rec)g.connect(ac.destination)}
+  if(rec){const stream=cv.captureStream(30);if(dest)stream.addTrack(dest.stream.getAudioTracks()[0]);
+   mt=['video/mp4;codecs=avc1.42E01E,mp4a.40.2','video/mp4','video/webm;codecs=vp9,opus','video/webm'].find(m=>MediaRecorder.isTypeSupported(m));rc=new MediaRecorder(stream,{mimeType:mt,videoBitsPerSecond:W>1280?8e6:5e6});rc.ondataavailable=e=>e.data.size&&ch.push(e.data);rc.start(1000)}
+  try{wl=await navigator.wakeLock.request('screen')}catch(e){}
+  if(ac){await ac.resume();au.play();const n=ac.currentTime,T=B.total;g.gain.setValueAtTime(0,n);g.gain.linearRampToValueAtTime(1,n+1.5);g.gain.setValueAtTime(1,n+Math.max(2,T-2.5));g.gain.linearRampToValueAtTime(0,n+T)}
+  const t0=performance.now();
+  await new Promise(done=>{(function f(){const t=(performance.now()-t0)/1000;if(abort||t>=B.total)return done();drawAt(x,t,B,W,H);st(`${rec?'영상 만드는 중':'미리보기'} ${Math.round(t)} / ${Math.round(B.total)}초 · 화면을 끄거나 다른 앱으로 이동하지 마세요`);requestAnimationFrame(f)})()});
+  B.S.forEach(s=>{s.on&&s.stop&&s.stop()});
+  if(rec){const d=new Promise(r=>rc.onstop=r);rc.stop();await d;if(!abort){lastVideo=new Blob(ch,{type:mt.split(';')[0]});showOut();st('완료! 아래에서 저장하세요.')}else st('중지했습니다.')}else st('미리보기 끝')
+ }catch(e){alert('오류: '+e.message);st('오류: '+e.message)}
+ finally{au&&au.pause();ac&&ac.close();wl&&wl.release();busy=false;if(!rec)cv.hidden=true}}
+$('#pv').onclick=()=>run(0);$('#mkv').onclick=()=>run(1);$('#stp').onclick=()=>abort=true;
+function showOut(){if(!lastVideo)return;const u=URL.createObjectURL(lastVideo),e=lastVideo.type.includes('mp4')?'mp4':'webm',n=`${fname()}.${e}`;
+ $('#out').innerHTML=`<video src="${u}" controls playsinline></video><a class="btn" download="${n}" href="${u}">📥 영상 저장 (다운로드 폴더)</a><button id="shr">↗ 공유 / 갤러리로 보내기</button>`;
+ $('#shr').onclick=()=>{const f=new File([lastVideo],n,{type:lastVideo.type});navigator.canShare&&navigator.canShare({files:[f]})?navigator.share({files:[f],title:$('#title').value}):alert('이 기기는 공유를 지원하지 않습니다. 저장 버튼을 사용하세요.')}}
+/* ---------- 가판대 (폰 안에 저장: IndexedDB) ---------- */
+const db=()=>new Promise((ok,no)=>{const r=indexedDB.open('tcs',1);r.onupgradeneeded=()=>r.result.createObjectStore('t',{keyPath:'id'});r.onsuccess=()=>ok(r.result);r.onerror=no});
+async function dbx(mode,fn){const d=await db();return new Promise((ok,no)=>{const t=d.transaction('t',mode),r=fn(t.objectStore('t'));t.oncomplete=()=>ok(r.result);t.onerror=no})}
+$('#sv').onclick=async()=>{if(!stops.length)return alert('저장할 내용이 없습니다');const id=curId||Date.now();curId=id;
+ try{await dbx('readwrite',s=>s.put({id,title:$('#title').value||'나의 여행',who:$('#who').value,video:lastVideo,stops:stops.map(s=>({...s,items:s.items.map(i=>({file:i.file,isVideo:i.isVideo,ts:i.ts,lat:i.lat,lng:i.lng,off:i.off}))}))}));alert('가판대에 저장했습니다 ✅')}catch(e){alert('저장 실패: '+e.message)}};
+async function shelf(){const L=await dbx('readonly',s=>s.getAll()),g=$('#gr');g.innerHTML=L.length?'':'저장된 여행이 없습니다.';
+ L.sort((a,b)=>b.id-a.id).forEach(r=>{const ph=r.stops.flatMap(s=>s.items).find(i=>!i.isVideo),c=document.createElement('div');c.className='bk';
+  c.innerHTML=`${ph?`<img src="${URL.createObjectURL(ph.file)}">`:'<img>'}<div><b>${esc(r.title)}</b><br><small>${esc(r.stops[0]?.date||'')} · ${r.stops.length}곳</small><button>열기</button>${r.video?'<button class="v">영상 보기/저장</button>':''}<button class="r">삭제</button></div>`;
+  const b=c.querySelectorAll('button');b[0].onclick=()=>{stops=r.stops.map(s=>({...s,items:s.items.map(i=>({...i,url:URL.createObjectURL(i.file)}))}));$('#title').value=r.title;$('#who').value=r.who||'';lastVideo=r.video||null;curId=r.id;tab(1);renderAll();showOut()};
+  if(r.video)c.querySelector('.v').onclick=()=>{lastVideo=r.video;tab(1);showOut();$('#out').scrollIntoView()};
+  c.querySelector('.r').onclick=async()=>{if(confirm('삭제할까요?')){await dbx('readwrite',s=>s.delete(r.id));shelf()}};g.appendChild(c)})}
+if('serviceWorker'in navigator)navigator.serviceWorker.register('sw.js');drawMap();
+</script></body></html>
