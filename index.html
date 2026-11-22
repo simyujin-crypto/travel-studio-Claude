@@ -21,12 +21,18 @@ canvas,#out video{width:100%;border-radius:12px;background:#000;margin-top:8px}s
 <main id="mk">
 <div class="card"><h3>① 여행 정보 · 사진/영상 선택</h3>
 <input id="title" placeholder="여행 제목 (예: 2026 광교산 등산)"><input id="who" placeholder="동반자 이름 (쉼표로 구분)">
-<input id="files" type="file" multiple accept="image/*,video/*"><button class="p" id="go">분석 및 시간순 정렬</button>
+<small class="h">📁 방법 1 (권장, GPS 유지): 아래 버튼 → 파일 화면에서 왼쪽 위 ≡ → <b>내장 메모리 → DCIM → Camera</b> 폴더로 들어가 사진·영상을 길게 눌러 여러 개 선택</small>
+<input id="files" type="file" multiple>
+<small class="h">🖼 방법 2: 사진 선택기 (편하지만 위치정보가 빠지는 폰이 많음)</small>
+<input id="files2" type="file" multiple accept="image/*,video/*">
+<select id="rad"><option value="100">같은 방문지 기준: 반경 100m</option><option value="300" selected>같은 방문지 기준: 반경 300m</option><option value="500">같은 방문지 기준: 반경 500m</option><option value="1000">같은 방문지 기준: 반경 1km</option></select>
+<button class="p" id="go">분석 및 시간순 정렬</button>
 <small class="h" id="msg">사진·영상을 고른 뒤 분석을 누르세요. 위치정보(GPS)가 있는 사진은 지도에 표시됩니다.</small></div>
-<div class="card"><h3>② 이동 경로 지도</h3><div id="map"></div></div>
+<div class="card"><h3>② 이동 경로 지도</h3><select id="tile"><option value="carto">지도 종류: 일반(밝은)</option><option value="osm">지도 종류: OpenStreetMap</option><option value="sat">지도 종류: 위성</option></select><div id="map"></div>
+<button id="cap">📸 지금 보이는 지도를 '전체 경로 사진'으로 사용</button><div id="capbox" hidden><img id="capimg" style="width:100%;border-radius:10px"><button id="capx">캡처 해제</button></div></div>
 <div class="card"><h3>③ 방문지 일정 <small id="cnt"></small></h3><small class="h">장소 이름은 눌러서 고칠 수 있습니다. 사진을 누르면 선택되어 아래 메뉴로 순서 변경·다른 방문지로 이동·제외를 할 수 있고, ▲▼로 방문지 순서도 바꿉니다.</small><div id="stops"></div><div id="bar" hidden></div></div>
 <div class="card"><h3>④ 영상 만들기</h3>
-<small class="h">전체 경로 지도 사진(선택, 없으면 자동 지도)</small><input id="mapimg" type="file" accept="image/*">
+<small class="h">전체 경로 지도 사진(선택 · 위에서 캡처했으면 필요 없음 · 폰 화면 캡처 사진도 가능)</small><input id="mapimg" type="file" accept="image/*">
 <small class="h">배경음악(선택)</small><input id="bgm" type="file" accept="audio/*">
 <select id="res"><option value="720">720p (빠름)</option><option value="1080">1080p (고화질)</option></select>
 <select id="vcap"><option value="8">영상은 최대 8초씩</option><option value="15" selected>영상은 최대 15초씩</option><option value="60">영상 전체 길이</option></select>
@@ -44,23 +50,33 @@ const st=t=>$('#st').textContent=t,fname=()=>($('#title').value||'여행기록')
 function tab(n){$('#mk').hidden=n!=1;$('#sh').hidden=n!=2;if(n==2)shelf();else if(map)setTimeout(()=>map.invalidateSize(),50)}
 $('#t1').onclick=()=>tab(1);$('#t2').onclick=()=>tab(2);
 /* ---------- 분석 ---------- */
-async function meta(f){const v=f.type.startsWith('video'),o={file:f,isVideo:v,off:false};let d=null;
- if(!v){try{const g=await exifr.gps(f);if(g&&g.latitude!=null){o.lat=g.latitude;o.lng=g.longitude}}catch(e){}
-  try{const e=await exifr.parse(f,['DateTimeOriginal']);if(e&&e.DateTimeOriginal)d=e.DateTimeOriginal}catch(e){}}
+const TILES={carto:['© OpenStreetMap © CARTO','https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png'],osm:['© OpenStreetMap','https://tile.openstreetmap.org/{z}/{x}/{y}.png'],sat:['Esri World Imagery','https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}']};
+const tileUrl=(z,x,y)=>TILES[$('#tile').value][1].replace('{z}',z).replace('{x}',x).replace('{y}',y),TD=s=>new Date(s.replace(' ','T')),day=i=>i.ts.slice(0,10),norm=t=>String(t||'').replace(/\s/g,'').toLowerCase();
+async function vgps(f){try{for(const part of[f.slice(0,600000),f.size>600000?f.slice(-600000):null]){if(!part)continue;const u=new Uint8Array(await part.arrayBuffer());
+ for(let i=0;i<u.length-8;i++)if(u[i]==0xA9&&u[i+1]==0x78&&u[i+2]==0x79&&u[i+3]==0x7A){const m=String.fromCharCode(...u.slice(i+4,i+44)).match(/([+-]\d+\.\d+)([+-]\d+\.\d+)/);if(m)return{lat:+m[1],lng:+m[2]}}}}catch(e){}return null}
+async function meta(f){const v=/^video\//.test(f.type)||/\.(mp4|mov|mkv|3gp|avi)$/i.test(f.name),o={file:f,isVideo:v,off:false};let d=null;
+ if(!v){try{const e=await exifr.parse(f,true);if(e){if(e.latitude!=null&&e.longitude!=null){o.lat=e.latitude;o.lng=e.longitude}d=e.DateTimeOriginal||e.CreateDate||e.DateTime||null}}catch(e){}
+  if(o.lat==null){try{const g=await exifr.gps(f);if(g&&g.latitude!=null){o.lat=g.latitude;o.lng=g.longitude}}catch(e){}}}
+ else{const g=await vgps(f);if(g){o.lat=g.lat;o.lng=g.lng}}
+ if(o.lat===0&&o.lng===0){o.lat=o.lng=undefined}
+ if(!(d instanceof Date)||isNaN(d))d=null;
  if(!d){const m=f.name.match(/(20\d\d)(\d\d)(\d\d)[_-]?(\d\d)(\d\d)(\d\d)/);d=m?new Date(+m[1],m[2]-1,+m[3],+m[4],+m[5],+m[6]):new Date(f.lastModified)}
  o.ts=fmt(d);o.url=URL.createObjectURL(f);return o}
 async function geo(a,b){try{const j=await(await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=17&accept-language=ko&lat=${a}&lon=${b}`)).json(),x=j.address||{};
  return j.name||x.tourism||x.leisure||x.natural||x.suburb||x.neighbourhood||x.village||x.town||x.city_district||x.road||''}catch(e){return ''}}
-$('#go').onclick=async()=>{const fl=[...$('#files').files];if(!fl.length)return alert('사진/영상을 먼저 선택하세요');
- $('#msg').textContent='분석 중...';const its=[];for(const f of fl)its.push(await meta(f));its.sort((a,b)=>a.ts<b.ts?-1:1);stops=[];curId=0;
- const ok=its.filter(i=>i.lat!=null),no=its.filter(i=>i.lat==null),T=(d,i)=>({date:i.ts.slice(0,10),time:i.ts.slice(11,16),lat:null,lng:null,place:'',items:[]});
- if(ok.length){for(const i of ok){const p=stops[stops.length-1];if(p&&p.date==i.ts.slice(0,10)&&hav(p.lat,p.lng,i.lat,i.lng)<=200)p.items.push(i);else stops.push({date:i.ts.slice(0,10),time:i.ts.slice(11,16),lat:i.lat,lng:i.lng,place:'',items:[i]})}
-  for(const i of no){let b=stops[0],bd=1e18;for(const s of stops)for(const j of s.items){const d=Math.abs(new Date(j.ts)-new Date(i.ts));if(d<bd){bd=d;b=s}}b.items.push(i)}}
- else{for(const i of no){let s=stops.find(z=>z.date==i.ts.slice(0,10));if(!s)stops.push(s=T(0,i));s.items.push(i)}}
+function mergeStops(A,B){A.items=A.items.concat(B.items).sort((x,y)=>x.ts<y.ts?-1:1);if(A.lat==null&&B.lat!=null){A.lat=B.lat;A.lng=B.lng}if(!A.place)A.place=B.place;stops.splice(stops.indexOf(B),1)}
+function autoMerge(){let ch=0;for(let i=stops.length-1;i>0;i--){const a=stops[i-1],b=stops[i],k=norm(a.place);if(k&&!/^방문지/.test(a.place)&&k==norm(b.place)){mergeStops(a,b);ch++}}if(ch){renderAll();$('#msg').textContent=`같은 이름의 이웃한 방문지 ${ch}곳을 하나로 합쳤습니다`}}
+$('#go').onclick=async()=>{const seen=new Set(),fl=[...$('#files').files,...$('#files2').files].filter(f=>{const k=f.name+f.size;if(seen.has(k))return false;seen.add(k);return/^(image|video)\//.test(f.type)||/\.(jpe?g|png|heic|heif|webp|gif|mp4|mov|mkv|3gp|avi)$/i.test(f.name)});
+ if(!fl.length)return alert('사진/영상을 먼저 선택하세요');const its=[];
+ for(let k=0;k<fl.length;k++){$('#msg').textContent=`분석 중 ${k+1}/${fl.length}`;its.push(await meta(fl[k]))}
+ its.sort((a,b)=>a.ts<b.ts?-1:1);stops=[];curId=0;capFile=null;$('#capbox').hidden=true;
+ const R=+$('#rad').value,ok=its.filter(i=>i.lat!=null),no=its.filter(i=>i.lat==null),mk=i=>({date:day(i),time:i.ts.slice(11,16),lat:i.lat==null?null:i.lat,lng:i.lng==null?null:i.lng,place:'',items:[i]});let cur=null;
+ for(const i of ok){if(cur&&cur.date==day(i)&&hav(cur.lat,cur.lng,i.lat,i.lng)<=R)cur.items.push(i);else stops.push(cur=mk(i))}
+ if(ok.length){for(const i of no){let b=stops[0],bd=1e18;for(const s of stops)for(const j of s.items){const d=Math.abs(TD(j.ts)-TD(i.ts));if(d<bd){bd=d;b=s}}b.items.push(i)}}
+ else{let last=0;for(const i of no){const t=+TD(i.ts);if(!cur||t-last>30*60000)stops.push(cur=mk(i));else cur.items.push(i);last=t}}
  stops.forEach(s=>s.items.sort((a,b)=>a.ts<b.ts?-1:1));
- $('#msg').textContent=ok.length?`완료! 방문지 ${stops.length}곳 (위치정보 있는 사진 ${ok.length}장). 지명을 찾는 중...`:'위치정보(GPS)가 있는 사진이 없어 날짜별로 묶었습니다. 사진 선택 화면에서 "파일/문서" 방식으로 고르면 위치정보가 남는 폰이 많습니다.';
- renderAll();let n=0;for(const s of stops){n++;if(s.lat!=null&&!s.place){s.place=await geo(s.lat,s.lng)||`방문지 ${n}`;renderAll();await sleep(1100)}}
- if(ok.length)$('#msg').textContent=`완료! 방문지 ${stops.length}곳`};
+ $('#msg').textContent=`위치정보(GPS) 읽힘 ${ok.length}장 · 없음 ${no.length}장 → 방문지 ${stops.length}곳`+(no.length>ok.length?'. 위치정보가 많이 빠졌습니다: "방법 1(파일)"로 DCIM/Camera 폴더에서 다시 선택하거나, 방문지의 [📍지도에서 위치]로 지정하세요.':'');
+ renderAll();let n=0;for(const s of stops.slice()){n++;if(s.lat!=null&&!s.place){s.place=await geo(s.lat,s.lng)||`방문지 ${n}`;renderAll();await sleep(1100)}}autoMerge()};
 let sel=null;
 function bar(){const b=$('#bar'),o=sel&&stops.find(s=>s.items.includes(sel));if(!o){sel=null;b.hidden=true;return}b.hidden=false;
  b.innerHTML=`<b>선택한 자료</b> <small>${o.items.indexOf(sel)+1}/${o.items.length}번째</small><div class="rw"><button id="b1">◀ 앞으로</button><button id="b2">뒤로 ▶</button><button id="b3">${sel.off?'영상에 포함':'영상에서 제외'}</button></div><select id="b4"><option value="">다른 방문지로 이동…</option>${stops.map((s,i)=>`<option value="${i}">${i+1}. ${esc(s.place||'방문지')}</option>`).join('')}<option value="n">＋ 새 방문지로 분리</option></select><button id="b5">선택 해제</button>`;
@@ -69,17 +85,34 @@ function bar(){const b=$('#bar'),o=sel&&stops.find(s=>s.items.includes(sel));if(
  $('#b4').onchange=e=>{const v=e.target.value;if(v==='')return;o.items.splice(o.items.indexOf(sel),1);let ns=null;
   if(v==='n'){ns={date:sel.ts.slice(0,10),time:sel.ts.slice(11,16),lat:sel.lat??null,lng:sel.lng??null,place:'',items:[sel]};stops.splice(stops.indexOf(o)+1,0,ns)}else stops[+v].items.push(sel);
   if(!o.items.length)stops.splice(stops.indexOf(o),1);renderAll();if(ns&&ns.lat!=null)geo(ns.lat,ns.lng).then(p=>{ns.place=p;renderAll()})}}
-function renderAll(){const box=$('#stops');box.innerHTML='';let n=0;
+function renderAll(){const box=$('#stops');box.innerHTML='';let n=0;if(sel&&!stops.some(s=>s.items.includes(sel)))sel=null;
  stops.forEach((s,i)=>{n+=s.items.length;const d=document.createElement('div');d.className='stop';
-  d.innerHTML=`<div class="sh"><b>${i+1}</b><input value="${esc(s.place)}" placeholder="장소 이름"><small>${s.date} ${s.time}</small><button class="u">▲</button><button class="w">▼</button><button class="x">삭제</button></div><div class="th"></div>`;
-  d.querySelector('input').onchange=e=>{s.place=e.target.value;drawMap()};d.querySelector('.x').onclick=()=>{stops.splice(i,1);renderAll()};d.querySelector('.u').onclick=()=>{if(i){[stops[i-1],stops[i]]=[stops[i],stops[i-1]];renderAll()}};d.querySelector('.w').onclick=()=>{if(i<stops.length-1){[stops[i+1],stops[i]]=[stops[i],stops[i+1]];renderAll()}};
+  d.innerHTML=`<div class="sh"><b>${i+1}</b><input value="${esc(s.place)}" placeholder="지명 입력 (같은 이름이면 자동 합쳐짐)"><small>${s.date} ${s.time}${s.lat==null?' · 위치없음':''}</small></div><div class="sh"><button class="u">▲</button><button class="w">▼</button><button class="m">앞 방문지와 합치기</button><button class="l">📍지도에서 위치</button><button class="x">삭제</button></div><div class="th"></div>`;
+  d.querySelector('input').onchange=e=>{s.place=e.target.value.trim();const k=norm(s.place),o=k?stops.find(z=>z!==s&&norm(z.place)==k):null;
+   if(o){const a=stops.indexOf(o)<i?o:s,b=a===o?s:o;mergeStops(a,b);$('#msg').textContent=`이름이 같은 방문지를 '${a.place}' 한 곳으로 합쳤습니다`;renderAll()}else drawMap()};
+  d.querySelector('.x').onclick=()=>{stops.splice(i,1);renderAll()};
+  d.querySelector('.u').onclick=()=>{if(i){[stops[i-1],stops[i]]=[stops[i],stops[i-1]];renderAll()}};d.querySelector('.w').onclick=()=>{if(i<stops.length-1){[stops[i+1],stops[i]]=[stops[i],stops[i+1]];renderAll()}};
+  d.querySelector('.m').onclick=()=>{if(i){mergeStops(stops[i-1],s);renderAll()}};
+  d.querySelector('.l').onclick=()=>{pickStop=s;$('#msg').textContent=`${i+1}번 방문지의 위치를 지도에서 탭하세요`;$('#map').scrollIntoView({block:'center'})};
   const th=d.querySelector('.th');s.items.forEach(it=>{const e=document.createElement(it.isVideo?'video':'img');e.src=it.url+(it.isVideo?'#t=0.5':'');if(it.isVideo){e.muted=true;e.preload='metadata'}
    e.className=(it.off?'off ':'')+(it===sel?'sel':'');e.onclick=()=>{sel=it;document.querySelectorAll('.th .sel').forEach(z=>z.classList.remove('sel'));e.classList.add('sel');bar()};th.appendChild(e)});box.appendChild(d)});
  $('#cnt').textContent=`(${stops.length}곳 · 자료 ${n}개)`;bar();drawMap()}
-function drawMap(){if(!window.L)return;if(!map){map=L.map('map');L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(map);lg=L.layerGroup().addTo(map)}
+let tl,pickStop=null,capFile=null;
+function setTile(){if(!map)return;if(tl)map.removeLayer(tl);const t=TILES[$('#tile').value];tl=L.tileLayer(t[1],{maxZoom:19,attribution:t[0],crossOrigin:true}).addTo(map)}
+function drawMap(){if(!window.L)return;if(!map){map=L.map('map');setTile();lg=L.layerGroup().addTo(map);
+  map.on('click',e=>{if(!pickStop)return;const s=pickStop;pickStop=null;s.lat=e.latlng.lat;s.lng=e.latlng.lng;$('#msg').textContent='위치를 지정했습니다';renderAll();if(!s.place)geo(s.lat,s.lng).then(p=>{if(p&&!s.place){s.place=p;renderAll()}})})}
  lg.clearLayers();const P=stops.filter(s=>s.lat!=null);if(!P.length){map.setView([36.5,127.8],6);return}const ll=P.map(s=>[s.lat,s.lng]);
- L.polyline(ll,{color:'#d4af37',weight:4}).addTo(lg);P.forEach(s=>L.marker([s.lat,s.lng],{icon:L.divIcon({className:'',html:`<div class="pin">${stops.indexOf(s)+1}</div>`,iconSize:[28,28]})}).bindPopup(`${esc(s.place)}<br>${s.items.length}개`).addTo(lg));
- map.invalidateSize();map.fitBounds(ll,{padding:[30,30],maxZoom:16})}
+ if(ll.length>1)L.polyline(ll,{color:'#d4af37',weight:4}).addTo(lg);P.forEach(s=>L.marker([s.lat,s.lng],{icon:L.divIcon({className:'',html:`<div class="pin">${stops.indexOf(s)+1}</div>`,iconSize:[28,28]})}).bindPopup(`${esc(s.place)}<br>${s.items.length}개`).addTo(lg));
+ map.invalidateSize();if(!pickStop)map.fitBounds(ll,{padding:[30,30],maxZoom:16})}
+$('#tile').onchange=setTile;
+$('#cap').onclick=async()=>{if(!map||!stops.some(s=>s.lat!=null))return alert('지도에 표시된 방문지가 없습니다. 위치를 먼저 지정하세요');
+ const k=2,sz=map.getSize(),z=map.getZoom(),b=map.getPixelBounds(),c=document.createElement('canvas');c.width=sz.x*k;c.height=sz.y*k;const x=c.getContext('2d');x.fillStyle='#1b2a30';x.fillRect(0,0,c.width,c.height);$('#cap').textContent='캡처 중...';const jobs=[],nn=2**z;
+ for(let i=Math.floor(b.min.x/256);i<=Math.floor(b.max.x/256);i++)for(let j=Math.floor(b.min.y/256);j<=Math.floor(b.max.y/256);j++){if(j<0||j>=nn)continue;const ii=((i%nn)+nn)%nn;jobs.push(new Promise(r=>{const m=new Image();m.crossOrigin='anonymous';const t=setTimeout(r,8000);m.onload=()=>{clearTimeout(t);x.drawImage(m,(i*256-b.min.x)*k,(j*256-b.min.y)*k,256*k,256*k);r()};m.onerror=()=>{clearTimeout(t);r()};m.src=tileUrl(z,ii,j)}))}
+ await Promise.all(jobs);const P=stops.filter(s=>s.lat!=null).map(s=>{const p=map.project([s.lat,s.lng],z);return[(p.x-b.min.x)*k,(p.y-b.min.y)*k,stops.indexOf(s)+1]});x.lineJoin='round';
+ if(P.length>1)[['#fff',11],[G,6]].forEach(([q,w])=>{x.strokeStyle=q;x.lineWidth=w*k;x.beginPath();P.forEach((p,i)=>i?x.lineTo(p[0],p[1]):x.moveTo(p[0],p[1]));x.stroke()});
+ x.textAlign='center';x.textBaseline='middle';P.forEach(p=>{x.fillStyle=G;x.strokeStyle='#fff';x.lineWidth=3*k;x.beginPath();x.arc(p[0],p[1],14*k,0,7);x.fill();x.stroke();x.fillStyle='#111';x.font=`800 ${15*k}px ${FONT}`;x.fillText(p[2],p[0],p[1]+k)});
+ capFile=await new Promise(r=>c.toBlob(r,'image/png'));$('#capimg').src=URL.createObjectURL(capFile);$('#capbox').hidden=false;$('#cap').textContent="📸 지금 보이는 지도를 '전체 경로 사진'으로 사용";$('#msg').textContent='지도 캡처 완료 — 영상의 전체 경로 지도로 사용됩니다'};
+$('#capx').onclick=()=>{capFile=null;$('#capbox').hidden=true};
 /* ---------- 그리기 도구 ---------- */
 const tiny=document.createElement('canvas');tiny.width=48;tiny.height=27;const tx=tiny.getContext('2d');
 function cover(x,s,sw,sh,dw,dh){const k=Math.max(dw/sw,dh/sh),w=sw*k,h=sh*k;x.drawImage(s,(dw-w)/2,(dh-h)/2,w,h)}
@@ -109,7 +142,7 @@ async function mapCanvas(W,H){const P=stops.filter(s=>s.lat!=null);if(!P.length)
  const mer=(la,lo,z)=>{const n=256*2**z,r=la*Math.PI/180;return[(lo+180)/360*n,(1-Math.log(Math.tan(r)+1/Math.cos(r))/Math.PI)/2*n]},la=P.map(s=>s.lat),lo=P.map(s=>s.lng);
  const box=z=>[mer(Math.max(...la),Math.min(...lo),z),mer(Math.min(...la),Math.max(...lo),z)];let z=16;for(;z>3;z--){const[a,b]=box(z);if(b[0]-a[0]<w*.7&&b[1]-a[1]<h*.7)break}
  const[a,b]=box(z),ox=(a[0]+b[0])/2-w/2,oy=(a[1]+b[1])/2-h/2;x.fillStyle='#1b2a30';x.fillRect(0,0,w,h);const jobs=[];
- for(let i=Math.floor(ox/256);i<=Math.floor((ox+w)/256);i++)for(let j=Math.floor(oy/256);j<=Math.floor((oy+h)/256);j++)jobs.push(new Promise(r=>{const m=new Image();m.crossOrigin='anonymous';const t=setTimeout(r,7000);m.onload=()=>{clearTimeout(t);x.drawImage(m,i*256-ox,j*256-oy);r()};m.onerror=()=>{clearTimeout(t);r()};m.src=`https://tile.openstreetmap.org/${z}/${i}/${j}.png`}));
+ for(let i=Math.floor(ox/256);i<=Math.floor((ox+w)/256);i++)for(let j=Math.floor(oy/256);j<=Math.floor((oy+h)/256);j++)jobs.push(new Promise(r=>{const m=new Image();m.crossOrigin='anonymous';const t=setTimeout(r,7000);m.onload=()=>{clearTimeout(t);x.drawImage(m,i*256-ox,j*256-oy);r()};m.onerror=()=>{clearTimeout(t);r()};m.src=tileUrl(z,i,j)}));
  await Promise.all(jobs);const pt=P.map(s=>{const p=mer(s.lat,s.lng,z);return[p[0]-ox,p[1]-oy]});x.lineJoin='round';
  if(pt.length>1){[['#fff',12],[G,7]].forEach(([col,lw])=>{x.strokeStyle=col;x.lineWidth=lw*h/700;x.beginPath();pt.forEach((p,i)=>i?x.lineTo(...p):x.moveTo(...p));x.stroke()})}
  x.textBaseline='middle';x.textAlign='center';pt.forEach((p,i)=>{const r=20*h/700;x.fillStyle=G;x.strokeStyle='#fff';x.lineWidth=3;x.beginPath();x.arc(p[0],p[1],r,0,7);x.fill();x.stroke();x.fillStyle='#111';x.font=`800 ${r*1.05}px ${FONT}`;x.fillText(stops.indexOf(P[i])+1,p[0],p[1]+1)});return c}
@@ -120,7 +153,7 @@ async function build(W,H){const title=$('#title').value||'나의 여행',who=$('
  stops.forEach((s,si)=>s.items.forEach(it=>{if(!it.off)ms.push({s,si,it})}));if(!ms.length)throw Error('사용할 사진/영상이 없습니다');
  let hero=null,last=null;for(let k=0;k<ms.length;k++){const m=ms[k];st(`자료 준비 ${k+1}/${ms.length}`);if(m.it.isVideo){m.v=await vmeta(m.it.url);if(!m.v){m.skip=1}}else{m.src=await bmp(m.it.file);if(!m.src)m.skip=1;else{hero=hero||m.src;last=m.src}}}
  const M=ms.filter(m=>!m.skip),n=stops.length,route=stops.map((s,i)=>s.place||`방문지 ${i+1}`).join(' → '),ds=stops.map(s=>s.date).sort(),dt=ds[0]==ds[ds.length-1]?ds[0]:`${ds[0]} ~ ${ds[ds.length-1]}`;
- let mc=null;const mi=$('#mapimg').files[0];if(mi)mc=await bmp(mi);else{st('지도 만드는 중...');mc=await mapCanvas(W,H)}
+ let mc=null;const mi=capFile||$('#mapimg').files[0];if(mi)mc=await bmp(mi);else{st('지도 만드는 중...');mc=await mapCanvas(W,H)}
  const S=[],cnt=`${M.length} 개`,sl=(dur,o)=>S.push({dur,...o});
  const hs=hero&&{w:hero.width,h:hero.height};
  sl(3.6,{start(){this.bg=mkBg(hero,W,H)},stop(){this.bg=null},draw(x){card(x,this.bg,W,H,'TRAVEL  MEMORY',title,dt,route,`방문지 ${n}곳  ·  기록 ${M.length}개`)}});
