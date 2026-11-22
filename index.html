@@ -54,11 +54,13 @@ const ES='https://server.arcgisonline.com/ArcGIS/rest/services/',TILES={osm:['©
 const tileUrl=(z,x,y)=>TILES[$('#tile').value][1].replace('{z}',z).replace('{x}',x).replace('{y}',y),loadTile=async(z,x,y)=>{try{const c=new AbortController(),t=setTimeout(()=>c.abort(),8000),r=await fetch(tileUrl(z,x,y),{mode:'cors',signal:c.signal});clearTimeout(t);return r.ok?await createImageBitmap(await r.blob()):null}catch(e){return null}},TD=s=>new Date(s.replace(' ','T')),day=i=>i.ts.slice(0,10),norm=t=>String(t||'').replace(/\s/g,'').toLowerCase();
 async function vgps(f){try{for(const part of[f.slice(0,600000),f.size>600000?f.slice(-600000):null]){if(!part)continue;const u=new Uint8Array(await part.arrayBuffer());
  for(let i=0;i<u.length-8;i++)if(u[i]==0xA9&&u[i+1]==0x78&&u[i+2]==0x79&&u[i+3]==0x7A){const m=String.fromCharCode(...u.slice(i+4,i+44)).match(/([+-]\d+\.\d+)([+-]\d+\.\d+)/);if(m)return{lat:+m[1],lng:+m[2]}}}}catch(e){}return null}
+const goodLL=(a,b)=>Number.isFinite(a)&&Number.isFinite(b)&&Math.abs(a)<=90&&Math.abs(b)<=180&&!(a===0&&b===0);
 async function meta(f){const v=/^video\//.test(f.type)||/\.(mp4|mov|mkv|3gp|avi)$/i.test(f.name),o={file:f,isVideo:v,off:false};let d=null;
  if(!v){try{const e=await exifr.parse(f,true);if(e){if(e.latitude!=null&&e.longitude!=null){o.lat=e.latitude;o.lng=e.longitude}d=e.DateTimeOriginal||e.CreateDate||e.DateTime||null}}catch(e){}
+  if(!goodLL(o.lat,o.lng))o.lat=o.lng=undefined;
   if(o.lat==null){try{const g=await exifr.gps(f);if(g&&g.latitude!=null){o.lat=g.latitude;o.lng=g.longitude}}catch(e){}}}
  else{const g=await vgps(f);if(g){o.lat=g.lat;o.lng=g.lng}}
- if(o.lat===0&&o.lng===0){o.lat=o.lng=undefined}
+ if(!goodLL(o.lat,o.lng))o.lat=o.lng=undefined;
  if(!(d instanceof Date)||isNaN(d))d=null;
  if(!d){const m=f.name.match(/(20\d\d)(\d\d)(\d\d)[_-]?(\d\d)(\d\d)(\d\d)/);d=m?new Date(+m[1],m[2]-1,+m[3],+m[4],+m[5],+m[6]):new Date(f.lastModified)}
  o.ts=fmt(d);o.url=URL.createObjectURL(f);return o}
@@ -85,7 +87,7 @@ function bar(){const b=$('#bar'),o=sel&&stops.find(s=>s.items.includes(sel));if(
  $('#b4').onchange=e=>{const v=e.target.value;if(v==='')return;o.items.splice(o.items.indexOf(sel),1);let ns=null;
   if(v==='n'){ns={date:sel.ts.slice(0,10),time:sel.ts.slice(11,16),lat:sel.lat??null,lng:sel.lng??null,place:'',items:[sel]};stops.splice(stops.indexOf(o)+1,0,ns)}else stops[+v].items.push(sel);
   if(!o.items.length)stops.splice(stops.indexOf(o),1);renderAll();if(ns&&ns.lat!=null)geo(ns.lat,ns.lng).then(p=>{ns.place=p;renderAll()})}}
-function renderAll(){const box=$('#stops');box.innerHTML='';let n=0;if(sel&&!stops.some(s=>s.items.includes(sel)))sel=null;
+function renderAll(){stops.forEach(s=>{if(!goodLL(s.lat,s.lng))s.lat=s.lng=null});const box=$('#stops');box.innerHTML='';let n=0;if(sel&&!stops.some(s=>s.items.includes(sel)))sel=null;
  stops.forEach((s,i)=>{n+=s.items.length;const d=document.createElement('div');d.className='stop';
   d.innerHTML=`<div class="sh"><b>${i+1}</b><input value="${esc(s.place)}" placeholder="지명 입력 (같은 이름이면 자동 합쳐짐)"><small>${s.date} ${s.time}${s.lat==null?' · 위치없음':''}</small></div><div class="sh"><button class="u">▲</button><button class="w">▼</button><button class="m">앞 방문지와 합치기</button><button class="l">📍지도에서 위치</button><button class="x">삭제</button></div><div class="th"></div>`;
   d.querySelector('input').onchange=e=>{s.place=e.target.value.trim();const k=norm(s.place),o=k?stops.find(z=>z!==s&&norm(z.place)==k):null;
